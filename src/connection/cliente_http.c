@@ -56,7 +56,7 @@ static err_t callback_conectado(void *arg, struct tcp_pcb *pcb, err_t err)
 
     char corpo_json[128];
     snprintf(corpo_json, sizeof(corpo_json),
-             "{\"niveldB\": \"%.2f\", \"nivelSom\": %s}",
+             "{\"niveldB\": %.2f, \"nivelSom\": %s}",
              dados_recebidos->nive_db, dados_recebidos->nivel_som);
 
     char requisicao[512];
