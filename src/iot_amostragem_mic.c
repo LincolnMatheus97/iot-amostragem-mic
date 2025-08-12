@@ -8,6 +8,12 @@
 #include "mic.h"
 #include "matriz.h"
 #include "buzzer.h"
+#include "cliente_http.h"
+#include "wifi.h"
+
+// --- Definindo uma pilha para o Núcleo 1 ---
+#define CORE1_STACK_SIZE 4096
+uint32_t core1_stack[CORE1_STACK_SIZE];
 
 // --- Variáveis globais para comunicação entre os núcleos ---
 volatile float g_nivel_db = 0.0f;
@@ -15,6 +21,9 @@ volatile int g_qnt_leds_acessos = 0;
 volatile const char* g_str_nivel_som = "Iniciando";
 volatile bool g_alarme_esta_ativo = false; // Indica se o alarme (sonoro e visual) está ativo
 volatile bool g_pause_buzzer_para_renderizacao = false; // Flag para cooperação entre núcleos
+
+// --- Estrututa para os dados do Microfone ---
+StatusMicrofone *status_microfone = NULL;
 
 // --- NÚCLEO 1: APENAS INTERFACE DE USUÁRIO ---
 void core1_entry() {
@@ -62,20 +71,51 @@ void core1_entry() {
     }
 }
 
+/**
+ * @brief Inicia a conexão Wi-Fi e exibe o status no display.
+ * @return 0 se a conexão for bem-sucedida, -1 caso contrário.
+ */
+int iniciar_conexao_wifi()
+{
+    clear_display();
+    draw_display(23, 20, 1, "Conectando em:");
+    draw_display(23, 32, 1, NOME_REDE_WIFI);
+    show_display();
+
+    int status_conexao = conexao_wifi();
+
+    clear_display();
+    if (status_conexao == 0) {
+        draw_display(10, 30, 1, "CONEXAO ESTABELECIDA");
+        printf("IP do dispositivo: %s\n", ipaddr_ntoa(&netif_default->ip_addr));
+    } else {
+        draw_display(10, 30, 1, "FALHA NA CONEXAO");
+    }
+    show_display();
+    sleep_ms(2000);
+
+    return status_conexao;
+}
+
 // --- NÚCLEO 0: APENAS LÓGICA E PROCESSAMENTO ---
 int main()
 {
     stdio_init_all();
-    
+
+    iniciar_conexao_wifi();
     inicializar_pwm_buzzer(PINO_BUZZER);
     init_config_adc();
     init_config_dma(); 
 
     printf("Lancando interface no Nucleo 1...\n");
-    multicore_launch_core1(core1_entry);
+    multicore_launch_core1_with_stack(core1_entry, core1_stack, CORE1_STACK_SIZE);
 
     static float db_antes_buzzer = 0.0f;
     static bool buzzer_foi_ativado = false;
+
+    // --- Variável para controlar o tempo de envio ---
+    uint64_t tempo_ultimo_envio = 0;
+    const uint64_t INTERVALO_ENVIO_US = 2 * 1000 * 1000;
     
     sleep_ms(4000); 
 
@@ -158,6 +198,25 @@ int main()
             set_pwm_buzzer(PINO_BUZZER, 3000, 50); // Liga o buzzer
         } else {
             set_pwm_buzzer(PINO_BUZZER, 0, 0); // Desliga o buzzer (seja por pausa ou alarme inativo)
+        }
+
+        // --- Lógica para enviar dados para a nuvem periodicamente ---
+        uint64_t tempo_atual = time_us_64();
+        if (tempo_atual - tempo_ultimo_envio > INTERVALO_ENVIO_US) {
+            tempo_ultimo_envio = tempo_atual;
+
+            status_microfone = (StatusMicrofone *)malloc(sizeof(StatusMicrofone));
+            if (status_microfone != NULL) {
+                status_microfone->nive_db = nivel_db;
+                strncpy(status_microfone->nivel_som, nivel_som, sizeof(status_microfone->nivel_som) - 1);
+                status_microfone->nivel_som[sizeof(status_microfone->nivel_som) - 1] = '\0';
+
+                printf("\nEnviando para a nuvem: dB=%0.2f, Nivel=%s\n", status_microfone->nive_db, status_microfone->nivel_som);
+                enviar_dados_para_nuvem(status_microfone);
+                
+                free(status_microfone); // Libera a memória após o uso
+                status_microfone = NULL; 
+            }
         }
 
         // printf("Debug Nucleo 0: dB: %.1f, Alarm Active: %d, Paused: %d\n", g_db_level, g_is_alarm_active, g_pause_buzzer_for_render);
