@@ -11,10 +11,6 @@
 #include "cliente_http.h"
 #include "wifi.h"
 
-// --- Definindo uma pilha para o Núcleo 1 ---
-#define CORE1_STACK_SIZE 4096
-uint32_t core1_stack[CORE1_STACK_SIZE];
-
 // --- Variáveis globais para comunicação entre os núcleos ---
 volatile float g_nivel_db = 0.0f;
 volatile int g_qnt_leds_acessos = 0;
@@ -71,44 +67,32 @@ void core1_entry() {
     }
 }
 
-/**
- * @brief Inicia a conexão Wi-Fi e exibe o status no display.
- * @return 0 se a conexão for bem-sucedida, -1 caso contrário.
- */
-int iniciar_conexao_wifi()
-{
-    clear_display();
-    draw_display(23, 20, 1, "Conectando em:");
-    draw_display(23, 32, 1, NOME_REDE_WIFI);
-    show_display();
-
-    int status_conexao = conexao_wifi();
-
-    clear_display();
-    if (status_conexao == 0) {
-        draw_display(10, 30, 1, "CONEXAO ESTABELECIDA");
-        printf("IP do dispositivo: %s\n", ipaddr_ntoa(&netif_default->ip_addr));
-    } else {
-        draw_display(10, 30, 1, "FALHA NA CONEXAO");
+void iniciar_conexao_wifi() {
+    printf("Inicializando Wi-Fi...\n");
+    if (conexao_wifi() != 0) {
+        printf("ERRO FATAL: Falha ao conectar Wi-Fi. A placa irá travar aqui.\n");
+        // Pisca o LED de erro se a conexão falhar
+        while(1) {
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+            sleep_ms(100);
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+            sleep_ms(100);
+        }
     }
-    show_display();
-    sleep_ms(2000);
-
-    return status_conexao;
+    printf("SUCESSO: Wi-Fi conectado! IP: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_default)));
 }
 
 // --- NÚCLEO 0: APENAS LÓGICA E PROCESSAMENTO ---
 int main()
 {
     stdio_init_all();
-
     iniciar_conexao_wifi();
     inicializar_pwm_buzzer(PINO_BUZZER);
     init_config_adc();
     init_config_dma(); 
 
     printf("Lancando interface no Nucleo 1...\n");
-    multicore_launch_core1_with_stack(core1_entry, core1_stack, CORE1_STACK_SIZE);
+    multicore_launch_core1(core1_entry);
 
     static float db_antes_buzzer = 0.0f;
     static bool buzzer_foi_ativado = false;
