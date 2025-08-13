@@ -143,6 +143,68 @@ O sistema ocasionalmente exibia uma leitura válida de som seguida por um "salto
 - Desligamento automático quando o som retorna para níveis "Moderado" ou "Baixo".
 - Todo o controle foi implementado no **núcleo 0**, garantindo leitura e decisão centralizada, sem travar a atualização gráfica do núcleo 1.
 
+### 7.9. Evolução para um Sistema IoT Conectado
+
+A transformação do sistema de monitoramento local para um dispositivo IoT totalmente conectado foi o maior desafio do projeto, revelando um problema complexo e sutil que não era aparente na operação offline.
+
+#### 7.9.1. O Obstáculo: Falha Total com a Ativação do Wi-Fi
+
+A tentativa inicial de adicionar a funcionalidade Wi-Fi resultou em uma falha completa e imediata do sistema. A placa tornava-se totalmente não responsiva assim que o código de inicialização do Wi-Fi era incluído — nem mesmo o LED de diagnóstico piscava, indicando um “Hard Fault” no momento da inicialização.
+
+O processo de depuração explorou várias hipóteses, como:
+
+- Consumo excessivo de memória pela pilha de rede.
+- Tamanho insuficiente da pilha do segundo núcleo.
+- Fragmentação de memória devido ao uso de `malloc()`.
+
+Mesmo após aplicar otimizações nessas áreas, o problema persistiu, provando que a causa raiz era outra.
+
+#### 7.9.2. O Diagnóstico Final: Conflito de Linkagem de Bibliotecas
+
+Após uma depuração metódica, a causa do problema foi isolada: a ordem em que as bibliotecas de hardware eram linkadas no ficheiro de compilação `CMakeLists.txt`.
+
+O linker, ao montar o programa final, estava juntando as bibliotecas de baixo nível (como `hardware_dma`, `hardware_adc`, `hardware_pwm`) antes das bibliotecas de sistema mais fundamentais (`pico_stdlib`, `pico_cyw43_arch_lwip_threadsafe_background`). Isso criava uma corrida por recursos no momento da inicialização do hardware. A biblioteca do Wi-Fi (que depende de timers, DMA e interrupções específicas) entrava em conflito com a inicialização dos outros periféricos, causando a falha fatal antes mesmo da execução da primeira linha do `main`.
+
+#### 7.9.3. A Solução: Reorganização Estratégica no `CMakeLists.txt`
+
+A solução definitiva foi simples e não exigiu alterações no código C do microcontrolador, nem otimizações de memória. Apenas a ordem das bibliotecas no comando `target_link_libraries` foi ajustada.
+
+**Ordem anterior (instável):**
+```cmake
+target_link_libraries(iot-amostragem-mic
+    hardware_i2c
+    hardware_dma
+    ...
+    pico_stdlib
+    pico_cyw43_arch_lwip_threadsafe_background
+)
+```
+
+**Ordem corrigida (estável):**
+```cmake
+target_link_libraries(iot-amostragem-mic
+    pico_stdlib
+    pico_cyw43_arch_lwip_threadsafe_background
+    pico_multicore
+    hardware_dma
+    hardware_adc
+    hardware_i2c
+    hardware_pwm
+    ws2812b_animation
+)
+```
+
+Ao garantir que as bibliotecas de sistema (`pico_stdlib`), conectividade (`pico_cyw43_arch_lwip_threadsafe_background`) e multicore (`pico_multicore`) fossem as primeiras a serem linkadas, a inicialização do sistema passou a ocorrer de forma estável e previsível, eliminando o conflito de hardware.
+
+Esta descoberta foi crucial e demonstrou que, em sistemas embarcados, a configuração do build é tão importante quanto o próprio código da aplicação.
+
+#### 7.9.4. Depuração Final da Comunicação com o Servidor
+
+Após a estabilização da placa, a comunicação com o servidor Node.js foi rapidamente depurada:
+
+- **Erro 404 Not Found:** corrigido ao ajustar o endpoint da requisição POST de `/` para `/dados-audio`, que era a rota que o servidor esperava.
+- **Erro 400 Bad Request:** causado por um JSON malformado. A string de classificação de som (ex: `"Baixo"`) estava sendo enviada sem aspas. A solução foi ajustar a formatação da string no `printf` para `\"%s\"`, garantindo a conformidade com o padrão JSON.
+
 ## 8. Diagrama de Sequência
 
 Abaixo está o diagrama de sequência que ilustra o fluxo de operação do sistema, desde a captura do som até a exibição no display OLED, incluindo a lógica de cooperação entre os núcleos para o alarme sonoro e a atualização da interface.
