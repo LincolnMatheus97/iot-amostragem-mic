@@ -56,12 +56,12 @@ static err_t callback_conectado(void *arg, struct tcp_pcb *pcb, err_t err)
 
     char corpo_json[128];
     snprintf(corpo_json, sizeof(corpo_json),
-             "{\"niveldB\": %.2f, \"nivelSom\": %s}",
+             "{\"niveldB\": %.2f, \"nivelSom\": \"%s\"}",
              dados_recebidos->nive_db, dados_recebidos->nivel_som);
 
     char requisicao[512];
     snprintf(requisicao, sizeof(requisicao),
-             "POST / HTTP/1.1\r\n"
+             "POST /dados-audio HTTP/1.1\r\n"
              "Host: %s\r\n"
              "Content-Type: application/json\r\n"
              "Content-Length: %d\r\n"
