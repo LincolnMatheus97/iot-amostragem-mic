@@ -99,7 +99,7 @@ int main()
 
     // --- Variável para controlar o tempo de envio ---
     uint64_t tempo_ultimo_envio = 0;
-    const uint64_t INTERVALO_ENVIO_US = 2 * 1000 * 1000;
+    const uint64_t INTERVALO_ENVIO_US = 5 * 100;
     
     sleep_ms(4000); 
 
@@ -110,7 +110,15 @@ int main()
 
     while (1)
     {
+        // Bloqueia a pilha de rede, pausando a atividade de RF
+        cyw43_arch_lwip_begin();
+
+        // Realiza a amostragem com o Wi-Fi em silêncio
         sample_mic();
+
+        // Libera o bloqueio, permitindo que o Wi-Fi volte a operar
+        cyw43_arch_lwip_end();
+
         float voltage_rms = get_voltage_rms();
         float nivel_db = get_db_simulated(voltage_rms);
 
