@@ -8,7 +8,7 @@
 #include "dma.h"
 
 // Altere para 1 se estiver usando o mic EXTERNO, ou deixe em 0 para o INTERNO.
-#define USE_EXTERNAL_MIC 1
+#define USE_EXTERNAL_MIC 0
 
 // Configurações Gerais
 #define MIC_CHANNEL 2
