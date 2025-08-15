@@ -1,6 +1,10 @@
 #ifndef MATRIZ_H
 #define MATRIZ_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "ws2812b_animation.h"
 #include "pico/stdlib.h"
 
@@ -19,5 +23,9 @@ void inicializar_matriz();
 void atualizar_ledbar(int qtd_leds);
 void renderizar();
 void limpar_matriz();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

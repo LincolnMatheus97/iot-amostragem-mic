@@ -1,6 +1,10 @@
 #ifndef DISPLAY_H
 #define DISPLAY_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"
@@ -18,5 +22,9 @@ void draw_display(uint32_t x_text, uint32_t y_text, uint32_t scale_text, const c
 void show_display();
 void clear_display();
 void display_update(float db_level, const char* sound_level);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

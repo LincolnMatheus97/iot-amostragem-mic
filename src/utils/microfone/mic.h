@@ -1,6 +1,10 @@
 #ifndef MIC_H
 #define MIC_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <math.h>
 #include "pico/stdlib.h"
@@ -38,5 +42,9 @@ void sample_mic();
 float get_voltage_rms();
 float get_db_simulated(float voltage_rms);
 const char* classify_sound_level(float db_level);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
