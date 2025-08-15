@@ -64,16 +64,14 @@ pico_enable_stdio_usb(iot-amostragem-mic 1)
 
 # Add the standard library to the build
 target_link_libraries(iot-amostragem-mic
-        hardware_i2c
-        hardware_dma
-        hardware_timer
-        hardware_clocks
-        hardware_adc
-        hardware_pwm
-        ws2812b_animation
-        pico_multicore
-        pico_stdlib
-        pico_cyw43_arch_lwip_threadsafe_background
+    pico_stdlib
+    pico_cyw43_arch_lwip_threadsafe_background
+    pico_multicore
+    hardware_dma
+    hardware_adc
+    hardware_i2c
+    hardware_pwm
+    ws2812b_animation
 )
 
 pico_generate_pio_header(iot-amostragem-mic ${CMAKE_CURRENT_LIST_DIR}/lib/RP2040-WS2812B-Animation/ws2812.pio)

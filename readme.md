@@ -125,6 +125,7 @@ O sistema ocasionalmente exibia uma leitura válida de som seguida por um "salto
 3. Aplicar um filtro de suavização assimétrica ("ataque rápido, decaimento lento") ao valor já seguro, garantindo que a ledbar suba instantaneamente com o som e desça suavemente, resultando em uma visualização profissional e estável.
 
 ### 7.6 Calibração Precisa dos Microfones Interno e Externo
+
 - Implementada calibração utilizando **referência de dB (`V_REF_DB`) ajustada experimentalmente** com base em comparações contra um aplicativo confiável de medição de decibéis.
 - Ajustada fórmula de conversão para corrigir a diferença entre valores medidos no microfone da placa BitDogLab e no aplicativo de referência.
 - Realizados testes com **níveis de silêncio, fala e palmas**, obtendo alinhamento próximo entre medidor externo e valores lidos pelo sistema.
@@ -132,11 +133,13 @@ O sistema ocasionalmente exibia uma leitura válida de som seguida por um "salto
 - Inclusão de **offsets** e ajustes na escala para reduzir sensibilidade excessiva em picos sonoros.
 
 ### 7.7 Implementação de Filtro Anti-Pico (Histerese de Nível Sonoro)
+
 - Adicionado sistema que **congela o nível de referência** (`db_antes_buzzer`) assim que o alarme é ativado, evitando aumentos abruptos por distorções ou saturação.
 - Se o som aumentar mais de **+3 dB** em relação ao valor no momento da ativação do buzzer, o sistema limita a leitura ao valor anterior, evitando falsos alarmes e loops de feedback.
 - Essa histerese atua apenas enquanto o alarme está ativo.
 
 ### 7.8 Lógica de Alarme Sustentado e Controle Contínuo do Buzzer
+
 - Criada lógica para só ativar o alarme após **detectar nível "Alto" por um tempo contínuo configurável** (`TEMPO_ALARME_SUSTENTADO_S`).
 - Previne disparos por ruídos breves e não prejudiciais.
 - **Buzzer contínuo:** uma vez ativado, permanece ligado enquanto o nível permanecer "Alto".
@@ -170,6 +173,7 @@ O linker, ao montar o programa final, estava juntando as bibliotecas de baixo n�
 A solução definitiva foi simples e não exigiu alterações no código C do microcontrolador, nem otimizações de memória. Apenas a ordem das bibliotecas no comando `target_link_libraries` foi ajustada.
 
 **Ordem anterior (instável):**
+
 ```cmake
 target_link_libraries(iot-amostragem-mic
     hardware_i2c
@@ -181,6 +185,7 @@ target_link_libraries(iot-amostragem-mic
 ```
 
 **Ordem corrigida (estável):**
+
 ```cmake
 target_link_libraries(iot-amostragem-mic
     pico_stdlib
@@ -205,17 +210,29 @@ Após a estabilização da placa, a comunicação com o servidor Node.js foi rap
 - **Erro 404 Not Found:** corrigido ao ajustar o endpoint da requisição POST de `/` para `/dados-audio`, que era a rota que o servidor esperava.
 - **Erro 400 Bad Request:** causado por um JSON malformado. A string de classificação de som (ex: `"Baixo"`) estava sendo enviada sem aspas. A solução foi ajustar a formatação da string no `printf` para `\"%s\"`, garantindo a conformidade com o padrão JSON.
 
-## 8. Diagrama de Sequência
+## 8. Problemas Descobertos e Soluções Pendentes
 
-Abaixo está o diagrama de sequência que ilustra o fluxo de operação do sistema, desde a captura do som até a exibição no display OLED, incluindo a lógica de cooperação entre os núcleos para o alarme sonoro e a atualização da interface.
+Durante a transição para o sistema IoT, foi identificado um comportamento anômalo que persiste, mas que está relacionado ao hardware e não ao software.
+
+### 8.1. Interferência no Microfone Externo com Wi-Fi Ativo
+
+**Sintoma:** Enquanto o microfone interno da placa BitDogLab funciona perfeitamente, o microfone externo (MAX9814) apresenta uma queda drástica na sensibilidade quando o Wi-Fi está ativo. Os valores de RMS ficam presos em um "piso" baixo (resultando em leituras de ~30 dB), mesmo com o bloqueio de software (`cyw43_arch_lwip_begin/end`) implementado.
+
+**Diagnóstico:** A solução de software foi eficaz para eliminar a interferência de radiofrequência (EMI), o que corrigiu o comportamento do microfone interno. No entanto, a persistência do problema no microfone externo aponta fortemente para ruído na linha de alimentação (3.3V). O chip Wi-Fi, mesmo com o rádio em silêncio, continua a consumir energia de forma ruidosa, e essa instabilidade é transmitida pelos fios de alimentação até o módulo do microfone externo, corrompendo o sinal analógico.
+
+**Solução Pendente (Hardware):** A correção definitiva para este problema não está no software, mas sim no hardware. É necessário adicionar capacitores de desacoplamento (por exemplo, um de 0.1µF em cerâmica e um de 10µF eletrolítico) em paralelo entre os pinos VCC e GND do módulo do microfone externo. Estes componentes filtrarão o ruído da fonte de alimentação, fornecendo energia limpa para o microfone. Como esta é uma modificação física, ela fica pendente para uma próxima fase do projeto.
+
+## 9. Diagrama de Sequência
+
+Abaixo está o diagrama de sequência atualizado, refletindo a evolução do projeto, incluindo a lógica IoT, a cooperação entre núcleos e a comunicação com o servidor.
 
 ```mermaid
 sequenceDiagram
     participant Ambiente
     participant Hardware as "HW de Entrada (Mic, ADC, DMA)"
-    participant Core0 as "Núcleo 0 (Lógica)"
+    participant Core0 as "Núcleo 0 (Lógica e IoT)"
     participant Core1 as "Núcleo 1 (Interface)"
-    participant Saida as "HW de Saída (Buzzer, Matriz, Display)"
+    participant Saida as "HW de Saída (Buzzer, Matriz, Display, Wi-Fi)"
 
     loop Ciclo de Operação Contínuo
 
@@ -225,6 +242,14 @@ sequenceDiagram
         Core0->>Core0: Processa Sinal (RMS, dB, Suavização)
         Core0->>Core0: Analisa Nível e Lógica de Alarme Sustentado
         Note right of Core0: Atualiza as<br/>variáveis globais<br/>para o Core1 ler
+
+        %% --- Comunicação IoT ---
+        alt Se o Wi-Fi estiver Ativo
+            Core0->>Saida: Envia dados para o Servidor (POST JSON)
+            Saida->>Core0: Confirmação do Servidor
+        else Wi-Fi Inativo
+            Note right of Core0: Dados armazenados<br/>localmente
+        end
 
         %% --- Leitura e Preparação no Núcleo 1 ---
         Core1->>Core0: Lê Variáveis Globais (g_db_level, etc.)
@@ -248,47 +273,28 @@ sequenceDiagram
         Core1-->>Saida: Atualiza o Display OLED (I2C)
 
     end
-
 ```
 
-### Explicação Detalhada do Diagrama de Sequência
+### Explicação Detalhada do Diagrama Atualizado
 
-Este diagrama mostra as interações entre os cinco componentes principais do seu sistema: o Mundo Físico, o Hardware de Entrada, o Núcleo 0, o Núcleo 1 e o Hardware de Saída. O tempo flui de cima para baixo.
+#### Captura e Processamento no Núcleo 0
 
-#### Geração do Som (Ambiente → Hardware)
+- O hardware de entrada (microfone, ADC e DMA) captura o som ambiente e transfere os dados para o buffer DMA.
+- O Núcleo 0 processa os dados, calcula o RMS, converte para dB e aplica a lógica de alarme sustentado.
+- As variáveis globais são atualizadas para que o Núcleo 1 possa ler os dados.
 
-- Tudo começa no Mundo Físico com a geração de uma onda sonora (sua voz, um teclado, palmas, etc.).
-- O Hardware (Mic, ADC, DMA) captura este som continuamente.
+#### Comunicação IoT
 
-#### Amostragem Concluída (Hardware → Núcleo 0)
+- Se o Wi-Fi estiver ativo, o Núcleo 0 envia os dados para o servidor como um JSON via POST e aguarda a confirmação.
+- Caso o Wi-Fi esteja inativo, os dados são armazenados localmente para envio posterior.
 
-- O DMA, trabalhando de forma autônoma, preenche o `adc_buffer` com 2500 amostras.
-- Ao final, a função `dma_channel_wait_for_finish_blocking()` no Núcleo 0 é liberada, efetivamente sinalizando que um novo "pacote" de dados de som está pronto para ser processado.
+#### Leitura e Preparação no Núcleo 1
 
-#### Processamento do Sinal (Laço interno no Núcleo 0)
+- O Núcleo 1 lê as variáveis globais atualizadas pelo Núcleo 0 e prepara os dados para exibição na matriz de LEDs e no display OLED.
 
-- O Núcleo 0 agora executa uma sequência de funções puramente de software: `get_voltage_rms()` e `get_db_simulated()`. Ele converte as 2500 amostras em um único e preciso valor de decibéis, já calibrado e suavizado com a lógica de "ataque rápido, decaimento lento".
-- Em seguida, ainda no Núcleo 0, a lógica de `main` verifica se o novo valor de dB ultrapassa o limiar de "Alto" e gerencia o temporizador do alarme sustentado.
+#### Lógica de Cooperação e Renderização
 
-#### Comunicação Inter-Core (Núcleo 0 → Núcleo 1)
+- Se o alarme estiver ativo, o Núcleo 1 solicita ao Núcleo 0 que pause o buzzer para evitar conflitos de hardware durante a renderização da matriz de LEDs.
+- Após a renderização, o Núcleo 1 libera o buzzer, e o Núcleo 0 o reativa, se necessário.
 
-- O Núcleo 0 atualiza as variáveis globais (`g_db_level`, `g_qnt_leds_acessos`, `g_is_alarm_active`). É como se ele deixasse o "relatório" pronto em uma "caixa de correio" compartilhada para o Núcleo 1 ler quando quiser.
-
-#### Preparação da Interface (Laço interno no Núcleo 1)
-
-- De forma independente e paralela, o Núcleo 1 lê as variáveis da "caixa de correio" e prepara os dados que serão enviados para a matriz e para o display.
-
-#### A Cooperação (Núcleo 1 ↔ Núcleo 0 → Saída)
-
-- Esta é a parte mais crítica e a solução para o conflito de hardware. O diagrama mostra um bloco `alt` (alternativa) que só acontece se o alarme estiver ativo.
-  1. O Núcleo 1 envia uma mensagem para o Núcleo 0 (setando `g_pause_buzzer_for_render = true`), pedindo uma pausa no som.
-  2. O Núcleo 0 percebe a solicitação e envia um comando para a Saída (Hardware), desligando o PWM do buzzer.
-  3. Com o buzzer silenciado, o Núcleo 1 envia os dados para a Saída (Hardware), atualizando a Matriz de LEDs via PIO sem nenhum conflito.
-  4. Imediatamente após, o Núcleo 1 avisa ao Núcleo 0 que ele já pode continuar (setando `g_pause_buzzer_for_render = false`).
-  5. O Núcleo 0 recebe a liberação e, se o alarme ainda for necessário, religa o buzzer.
-
-#### Finalização da Interface (Núcleo 1 → Saída)
-
-- Por fim, o Núcleo 1 envia os dados para o Display OLED via I2C. Esta operação acontece por último, pois é menos sensível à temporização.
-
-O loop então se repete, dezenas de vezes por segundo, mantendo o sistema responsivo e em tempo real.
+Este diagrama reflete as evoluções do projeto, destacando a lógica IoT, a comunicação com o servidor e a cooperação entre os núcleos para manter o sistema responsivo e funcional.
