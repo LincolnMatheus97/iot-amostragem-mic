@@ -33,22 +33,18 @@ project(iot-amostragem-mic C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-# set main code path
-file(GLOB_RECURSE MAIN "src/iot_amostragem_mic.c")
-# set path to utility files
-file(GLOB_RECURSE UTILS "src/utils/**/*.c")
-# set path to includes
-file(GLOB_RECURSE LIB "lib/ssd1306/*.c")
-# set path to connection files
-file(GLOB_RECURSE CONNECTION_FILES "src/connection/*.c")
-
 # Add executable. Default name is the project name, version 0.1
-
-add_executable(iot-amostragem-mic 
-        ${MAIN}
-        ${UTILS}
-        ${LIB}
-        ${CONNECTION_FILES}
+add_executable(iot-amostragem-mic
+    src/iot_amostragem_mic.cpp
+    src/connection/cliente_ws.cpp
+    src/utils/wifi/wifi.c
+    src/utils/buzzer/buzzer.c
+    src/utils/displayOLED/display.c
+    src/utils/dma/dma.c
+    src/utils/matriz/matriz.c
+    src/utils/microfone/mic.c
+    lib/ssd1306/ssd1306.c
+    lib/websocket/ws.cpp
 )
 
 add_subdirectory(
@@ -94,6 +90,7 @@ target_include_directories(iot-amostragem-mic PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src/connection
         ${CMAKE_CURRENT_LIST_DIR}/lib
         ${CMAKE_CURRENT_LIST_DIR}/lib/ssd1306
+        ${CMAKE_CURRENT_LIST_DIR}/lib/websocket
         ${CMAKE_CURRENT_LIST_DIR}/lib/RP2040-WS2812B-Animation/inc
         ${CMAKE_CURRENT_LIST_DIR}/lib/RP2040-WS2812B-Animation/inc/CP0-EU
         ${CMAKE_CURRENT_LIST_DIR}/lib/RP2040-WS2812B-Animation/inc/utf8-iterator/source
